@@ -26,15 +26,17 @@ final class AppModel: ObservableObject {
     @Published var resultURL: URL?
     @Published var resultData: Data?
     @Published var resultPixels = CGSize.zero
+    @Published var resultFormat = Format.gif
 
     private var tools: FFmpeg.Tools?
     private var pendingURL: URL?
     private var job: Conversion?
 
     /// Running correction of the size estimate, learned from real results.
+    private var calibrationKey: String { "calibration-\(settings.format.rawValue)" }
     private var calibration: Double {
-        get { let v = UserDefaults.standard.double(forKey: "calibration"); return v > 0 ? v : 1 }
-        set { UserDefaults.standard.set(newValue, forKey: "calibration") }
+        get { let v = UserDefaults.standard.double(forKey: calibrationKey); return v > 0 ? v : 1 }
+        set { UserDefaults.standard.set(newValue, forKey: calibrationKey) }
     }
 
     init() {
@@ -54,7 +56,7 @@ final class AppModel: ObservableObject {
     }
 
     var destination: URL? {
-        info?.url.deletingPathExtension().appendingPathExtension("gif")
+        info?.url.deletingPathExtension().appendingPathExtension(settings.format.fileExtension)
     }
 
     @discardableResult
@@ -106,13 +108,13 @@ final class AppModel: ObservableObject {
     func convert() {
         guard let plan, let tools, let destination else { return }
         if destination.standardizedFileURL == plan.source.standardizedFileURL {
-            phase = .failed("The source is already a GIF.")
+            phase = .failed("The output would overwrite the source file.")
             return
         }
         if FileManager.default.fileExists(atPath: destination.path) {
             let alert = NSAlert()
             alert.messageText = "Replace \(destination.lastPathComponent)?"
-            alert.informativeText = "A GIF with this name already exists next to the video."
+            alert.informativeText = "A file with this name already exists next to the video."
             alert.addButton(withTitle: "Replace")
             alert.addButton(withTitle: "Cancel")
             if alert.runModal() != .alertFirstButtonReturn { return }
@@ -121,7 +123,7 @@ final class AppModel: ObservableObject {
         let job = Conversion(plan: plan, tools: tools)
         self.job = job
         progress = 0
-        stage = "Analysing colours"
+        stage = "Starting"
         preview = poster?.cgImage(forProposedRect: nil, context: nil, hints: nil)
         phase = .converting
 
@@ -145,6 +147,7 @@ final class AppModel: ObservableObject {
                     self.resultURL = destination
                     self.resultData = data
                     self.resultPixels = CGSize(width: plan.outW, height: plan.outH)
+                    self.resultFormat = plan.format
                     if let size = data?.count, size > 0, plan.rawEstimate > 0 {
                         let ratio = min(8, max(0.125, Double(size) / plan.rawEstimate))
                         self.calibration = self.calibration * 0.5 + ratio * 0.5

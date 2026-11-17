@@ -36,12 +36,63 @@ enum Dither: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum Format: String, Codable, CaseIterable, Identifiable {
+    case gif, webp, avif, apng
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .gif: return "GIF"
+        case .webp: return "WebP"
+        case .avif: return "AVIF"
+        case .apng: return "APNG"
+        }
+    }
+    /// APNG files use .png so that every app and upload form accepts them.
+    var fileExtension: String { self == .apng ? "png" : rawValue }
+    var mimeType: String { "image/\(rawValue)" }
+    var hasQuality: Bool { self == .webp || self == .avif }
+    /// Rough bytes per pixel per frame before calibration.
+    var bytesPerPixel: Double {
+        switch self {
+        case .gif: return 0.06
+        case .webp: return 0.025
+        case .avif: return 0.008
+        case .apng: return 0.3
+        }
+    }
+}
+
+enum Quality: String, Codable, CaseIterable, Identifiable {
+    case low, medium, high, best
+    var id: String { rawValue }
+    var label: String { rawValue.capitalized }
+    var webp: Int { [.low: 45, .medium: 65, .high: 80, .best: 92][self]! }
+    var crf: Int { [.low: 48, .medium: 40, .high: 32, .best: 24][self]! }
+    var sizeFactor: Double { [.low: 0.6, .medium: 1.0, .high: 1.6, .best: 2.6][self]! }
+}
+
 struct Settings: Codable, Equatable {
+    var format = Format.gif
     var fps = 15
     var width = 960          // 0 = original
     var colors = 256
-    var speed = 1.0
     var dither = Dither.pattern
+    var quality = Quality.medium
+    var speed = 1.0
+
+    init() {}
+
+    // Tolerates settings saved by older versions that lack newer keys.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        format = (try? c.decode(Format.self, forKey: .format)) ?? format
+        fps = (try? c.decode(Int.self, forKey: .fps)) ?? fps
+        width = (try? c.decode(Int.self, forKey: .width)) ?? width
+        colors = (try? c.decode(Int.self, forKey: .colors)) ?? colors
+        dither = (try? c.decode(Dither.self, forKey: .dither)) ?? dither
+        quality = (try? c.decode(Quality.self, forKey: .quality)) ?? quality
+        speed = (try? c.decode(Double.self, forKey: .speed)) ?? speed
+    }
 }
 
 /// Everything ffmpeg needs, resolved from settings + the source video.
@@ -59,6 +110,8 @@ struct Plan {
     let colors: Int
     let speed: Double
     let dither: Dither
+    let format: Format
+    let quality: Quality
 
     init(info: VideoInfo, settings: Settings, trimStart: Double, trimEnd: Double) {
         source = info.url
@@ -72,8 +125,13 @@ struct Plan {
         let cap = max(1, Int((info.fps * settings.speed).rounded()))
         fps = max(1, min(settings.fps, cap))
         let w = (settings.width == 0 || settings.width >= info.width) ? info.width : settings.width
-        outW = max(2, w)
-        outH = max(2, Int((Double(info.height) * Double(outW) / Double(info.width)).rounded()))
+        format = settings.format
+        quality = settings.quality
+        var ow = max(2, w)
+        var oh = max(2, Int((Double(info.height) * Double(ow) / Double(info.width)).rounded()))
+        if format == .avif { ow = max(2, ow & ~1); oh = max(2, oh & ~1) }   // AV1 4:2:0 needs even sizes
+        outW = ow
+        outH = oh
         let k = min(1, 400.0 / Double(outW), 300.0 / Double(outH))
         previewW = max(2, Int(Double(outW) * k))
         previewH = max(2, Int(Double(outH) * k))
@@ -84,9 +142,11 @@ struct Plan {
 
     var outputDuration: Double { length / speed }
 
-    /// Uncalibrated guess at the GIF size in bytes.
+    /// Uncalibrated guess at the output size in bytes.
     var rawEstimate: Double {
-        let bytesPerPixel = 0.06 * (log2(Double(colors)) / 8.0) * dither.sizeFactor
+        var bytesPerPixel = format.bytesPerPixel
+        if format == .gif { bytesPerPixel *= (log2(Double(colors)) / 8.0) * dither.sizeFactor }
+        if format.hasQuality { bytesPerPixel *= quality.sizeFactor }
         return Double(outW * outH) * Double(frames) * bytesPerPixel
     }
 
@@ -107,22 +167,48 @@ struct Plan {
         ["-map", "[v]", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]
     }
 
-    func paletteArgs(palette: URL) -> [String] {
-        let graph = "\(chain),split[a][b];"
-            + "[a]palettegen=max_colors=\(colors):stats_mode=diff[p];"
-            + "[b]scale=\(previewW):\(previewH)[v]"
-        return inputArgs + ["-filter_complex", graph,
-                            "-map", "[p]", "-update", "1", "-frames:v", "1", palette.path]
-            + previewOut
+    struct Pass {
+        let stage: String
+        let weight: Double
+        let args: [String]
     }
 
-    func encodeArgs(palette: URL, output: URL) -> [String] {
-        let graph = "\(chain)[x];"
-            + "[x][1:v]paletteuse=dither=\(dither.filter):diff_mode=rectangle,split[g][q];"
-            + "[q]scale=\(previewW):\(previewH):flags=neighbor[v]"
-        return inputArgs + ["-i", palette.path, "-filter_complex", graph,
-                            "-map", "[g]", "-loop", "0", "-f", "gif", output.path]
-            + previewOut
+    /// The ffmpeg runs needed to produce `output`. `workDir` holds intermediates.
+    func passes(workDir: URL, output: URL) -> [Pass] {
+        if format == .gif {
+            let palette = workDir.appendingPathComponent("palette.png")
+            let analyse = "\(chain),split[a][b];"
+                + "[a]palettegen=max_colors=\(colors):stats_mode=diff[p];"
+                + "[b]scale=\(previewW):\(previewH)[v]"
+            let encode = "\(chain)[x];"
+                + "[x][1:v]paletteuse=dither=\(dither.filter):diff_mode=rectangle,split[g][q];"
+                + "[q]scale=\(previewW):\(previewH):flags=neighbor[v]"
+            return [
+                Pass(stage: "Analysing colours", weight: 0.35,
+                     args: inputArgs + ["-filter_complex", analyse,
+                                        "-map", "[p]", "-update", "1", "-frames:v", "1", palette.path]
+                         + previewOut),
+                Pass(stage: "Encoding GIF", weight: 0.65,
+                     args: inputArgs + ["-i", palette.path, "-filter_complex", encode,
+                                        "-map", "[g]", "-loop", "0", "-f", "gif", output.path]
+                         + previewOut),
+            ]
+        }
+        let encoder: [String]
+        switch format {
+        case .webp:
+            encoder = ["-c:v", "libwebp_anim", "-pix_fmt", "yuv420p", "-lossless", "0",
+                       "-q:v", "\(quality.webp)", "-compression_level", "4", "-loop", "0", "-f", "webp"]
+        case .avif:
+            encoder = ["-c:v", "libsvtav1", "-pix_fmt", "yuv420p", "-crf", "\(quality.crf)",
+                       "-preset", "8", "-loop", "0", "-f", "avif"]
+        default:
+            encoder = ["-c:v", "apng", "-pix_fmt", "rgb24", "-plays", "0", "-f", "apng"]
+        }
+        let graph = "\(chain),split[g][q];[q]scale=\(previewW):\(previewH)[v]"
+        return [Pass(stage: "Encoding \(format.label)", weight: 1,
+                     args: inputArgs + ["-filter_complex", graph, "-map", "[g]"] + encoder + [output.path]
+                         + previewOut)]
     }
 }
 
@@ -249,14 +335,17 @@ final class Conversion {
         let tmp = fm.temporaryDirectory.appendingPathComponent("giffer-\(UUID().uuidString)")
         try fm.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: tmp) }
-        let palette = tmp.appendingPathComponent("palette.png")
-        let gif = tmp.appendingPathComponent("out.gif")
+        let out = tmp.appendingPathComponent("out.\(plan.format.fileExtension)")
 
-        try pass(plan.paletteArgs(palette: palette)) { f, img in progress(f * 0.35, "Analysing colours", img) }
-        try pass(plan.encodeArgs(palette: palette, output: gif)) { f, img in progress(0.35 + f * 0.65, "Encoding GIF", img) }
+        var done = 0.0
+        for step in plan.passes(workDir: tmp, output: out) {
+            let base = done
+            try pass(step.args) { f, img in progress(base + f * step.weight, step.stage, img) }
+            done += step.weight
+        }
 
         if fm.fileExists(atPath: destination.path) { try fm.removeItem(at: destination) }
-        try fm.moveItem(at: gif, to: destination)
+        try fm.moveItem(at: out, to: destination)
     }
 
     private func pass(_ args: [String], onFrame: (Double, CGImage?) -> Void) throws {

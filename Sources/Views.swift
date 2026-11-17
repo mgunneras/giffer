@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
+import WebKit
 
 private func bytes(_ n: Int64) -> String {
     ByteCountFormatter.string(fromByteCount: n, countStyle: .file)
@@ -48,7 +49,7 @@ struct DropZone: View {
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(targeted ? Color.accentColor : .secondary)
             Text("Drop a video here").font(.title3.weight(.medium))
-            Text("or drop it on the Dock icon. The GIF is saved next to the video.")
+            Text("or drop it on the Dock icon. The result is saved next to the video.")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Button("Choose File…") { model.chooseFile() }.padding(.top, 4)
         }
@@ -89,6 +90,12 @@ struct OptionsView: View {
 
                 Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 10) {
                     GridRow {
+                        label("Format")
+                        Picker("", selection: $model.settings.format) {
+                            ForEach(Format.allCases) { Text($0.label).tag($0) }
+                        }.pickerStyle(.segmented).labelsHidden()
+                    }
+                    GridRow {
                         label("Frame rate")
                         Picker("", selection: $model.settings.fps) {
                             ForEach([5, 8, 10, 12, 15, 20, 24, 30], id: \.self) { Text("\($0) fps").tag($0) }
@@ -101,18 +108,33 @@ struct OptionsView: View {
                             ForEach(widths.filter { $0 < info.width }, id: \.self) { Text(verbatim: "\($0) px").tag($0) }
                         }.labelsHidden().fixedSize()
                     }
-                    GridRow {
-                        label("Colours")
-                        Picker("", selection: $model.settings.colors) {
-                            ForEach([256, 128, 64, 32], id: \.self) { Text("\($0)").tag($0) }
-                        }.pickerStyle(.segmented).labelsHidden()
-                    }
-                    GridRow {
-                        label("Dithering")
-                        Picker("", selection: $model.settings.dither) {
-                            ForEach(Dither.allCases) { Text($0.label).tag($0) }
-                        }.pickerStyle(.segmented).labelsHidden()
-                            .help("Smooth looks best on footage. None is smallest and suits screen recordings.")
+                    if model.settings.format == .gif {
+                        GridRow {
+                            label("Colours")
+                            Picker("", selection: $model.settings.colors) {
+                                ForEach([256, 128, 64, 32], id: \.self) { Text(verbatim: "\($0)").tag($0) }
+                            }.pickerStyle(.segmented).labelsHidden()
+                        }
+                        GridRow {
+                            label("Dithering")
+                            Picker("", selection: $model.settings.dither) {
+                                ForEach(Dither.allCases) { Text($0.label).tag($0) }
+                            }.pickerStyle(.segmented).labelsHidden()
+                                .help("Smooth looks best on footage. None is smallest and suits screen recordings.")
+                        }
+                    } else if model.settings.format.hasQuality {
+                        GridRow {
+                            label("Quality")
+                            Picker("", selection: $model.settings.quality) {
+                                ForEach(Quality.allCases) { Text($0.label).tag($0) }
+                            }.pickerStyle(.segmented).labelsHidden()
+                        }
+                    } else {
+                        GridRow {
+                            label("Quality")
+                            Text("Lossless. Files are large; lower the width and frame rate.")
+                                .font(.callout).foregroundStyle(.secondary)
+                        }
                     }
                     GridRow {
                         label("Speed")
@@ -208,8 +230,9 @@ struct DoneView: View {
         let k = min(1, 420 / max(1, px.width), 300 / max(1, px.height))
         VStack(spacing: 14) {
             if let data = model.resultData {
-                AnimatedGIF(data: data)
+                AnimatedImage(data: data, mimeType: model.resultFormat.mimeType)
                     .frame(width: px.width * k, height: px.height * k)
+                    .allowsHitTesting(false)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             VStack(spacing: 2) {
@@ -287,26 +310,73 @@ struct MissingFFmpegView: View {
     }
 }
 
-struct AnimatedGIF: NSViewRepresentable {
-    let data: Data
+struct AboutView: View {
+    private let artwork: NSImage = Bundle.main.url(forResource: "Artwork", withExtension: "png")
+        .flatMap { NSImage(contentsOf: $0) } ?? NSApp.applicationIconImage
+    private let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    private let copyright = Bundle.main.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String ?? ""
+    private let bundled = Bundle.main.url(forResource: "bundled-versions", withExtension: "txt")
+        .flatMap { try? String(contentsOf: $0, encoding: .utf8) }?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
 
-    func makeNSView(context: Context) -> NSImageView {
-        let view = NSImageView()
-        view.imageScaling = .scaleProportionallyUpOrDown
-        view.animates = true
-        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        view.setContentHuggingPriority(.defaultLow, for: .vertical)
-        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+    var body: some View {
+        VStack(spacing: 16) {
+            // The square artwork itself, not the rounded Dock icon.
+            Image(nsImage: artwork)
+                .resizable().interpolation(.high)
+                .frame(width: 288, height: 288)
+                .overlay(Rectangle().strokeBorder(Color.primary.opacity(0.15), lineWidth: 1))
+            VStack(spacing: 3) {
+                Text("Giffer").font(.title2.weight(.semibold))
+                Text(verbatim: "Version \(version)").font(.callout).foregroundStyle(.secondary)
+            }
+            VStack(spacing: 2) {
+                Text("Get Giffer and its source code at").font(.callout)
+                Link("github.com/mgunneras/giffer", destination: URL(string: "https://github.com/mgunneras/giffer")!)
+                    .font(.callout)
+            }
+            Text(verbatim: "Includes FFmpeg (LGPL 2.1 or later), libwebp and SVT-AV1 (BSD 3-Clause), built from the official sources"
+                + (bundled.map { ": \($0)" } ?? "")
+                + ". The icon is set in Jost (SIL Open Font License). Licence texts are inside the app at Contents/Resources/licenses.")
+                .font(.caption).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: copyright).font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(24)
+        .frame(width: 336)
+    }
+}
+
+/// Plays the result in a web view, which animates GIF, WebP, AVIF and APNG alike.
+struct AnimatedImage: NSViewRepresentable {
+    let data: Data
+    let mimeType: String
+
+    /// Never accepts drags, so a video dropped on the preview still reaches the app.
+    final class PassiveWebView: WKWebView {
+        override func registerForDraggedTypes(_ newTypes: [NSPasteboard.PasteboardType]) {}
+    }
+
+    static weak var current: WKWebView?   // for the debug snapshot hook
+
+    func makeNSView(context: Context) -> WKWebView {
+        let view = PassiveWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        view.setValue(false, forKey: "drawsBackground")
+        view.unregisterDraggedTypes()
+        Self.current = view
         return view
     }
 
-    func updateNSView(_ view: NSImageView, context: Context) {
-        if context.coordinator.data != data {
-            context.coordinator.data = data
-            view.image = NSImage(data: data)
-            view.animates = true
-        }
+    func updateNSView(_ view: WKWebView, context: Context) {
+        guard context.coordinator.data != data else { return }
+        context.coordinator.data = data
+        let html = """
+        <html><body style="margin:0;overflow:hidden;background:transparent">
+        <img style="width:100vw;height:100vh;object-fit:contain;display:block"
+             src="data:\(mimeType);base64,\(data.base64EncodedString())">
+        </body></html>
+        """
+        view.loadHTMLString(html, baseURL: nil)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }

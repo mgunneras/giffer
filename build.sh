@@ -17,13 +17,13 @@ cp Info.plist "$APP/Contents/Info.plist"
 
 if [ -x vendor/ffmpeg/ffmpeg ]; then
   cp vendor/ffmpeg/ffmpeg vendor/ffmpeg/ffprobe "$APP/Contents/Helpers/"
-  cp vendor/ffmpeg/COPYING.LGPLv2.1 "$APP/Contents/Resources/"
-  sed "s/FFMPEG_VERSION/$(cat vendor/ffmpeg/VERSION)/" Credits.html > "$APP/Contents/Resources/Credits.html"
+  cp -R vendor/ffmpeg/licenses "$APP/Contents/Resources/licenses"
+  cp vendor/ffmpeg/VERSION "$APP/Contents/Resources/bundled-versions.txt"
 else
   echo "warning: vendor/ffmpeg missing, the app will need a system ffmpeg (run ./build-ffmpeg.sh)" >&2
 fi
 
-if [ ! -f build/AppIcon.icns ]; then
+if [ ! -f build/AppIcon.icns ] || [ make-icon.swift -nt build/AppIcon.icns ]; then
   swift make-icon.swift build/icon.png
   SET=build/AppIcon.iconset
   rm -rf "$SET" && mkdir -p "$SET"
@@ -34,6 +34,9 @@ if [ ! -f build/AppIcon.icns ]; then
   iconutil -c icns "$SET" -o build/AppIcon.icns
 fi
 cp build/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp build/icon.png "$APP/Contents/Resources/Artwork.png"      # square artwork, shown in the About window
+mkdir -p "$APP/Contents/Resources/licenses"
+cp assets/fonts/Jost-OFL.txt "$APP/Contents/Resources/licenses/Jost-OFL.txt"
 
 # Ad-hoc signature. Set SIGN_ID to a "Developer ID Application: ..." identity for a shareable, notarisable build.
 SIGN_ID="${SIGN_ID:--}"
