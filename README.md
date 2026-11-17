@@ -1,6 +1,11 @@
 # Giffer
 
-A small macOS app that converts a video file to an animated image: GIF, animated WebP, AVIF or APNG.
+A small macOS app that converts a video file to an animated image: GIF, animated WebP, AVIF or APNG. It was built for making GIFs to drop into presentations such as Google Slides.
+
+<p>
+  <img src="assets/screenshots/drop-window.jpg" width="400" alt="The Giffer window with a drop zone reading Drop a video here">
+  <img src="assets/screenshots/options-window.jpg" width="400" alt="The Giffer options window showing format, frame rate, width, colours, dithering, speed and trim settings">
+</p>
 
 Drag a video (`.mp4`, `.mov`, `.webm`, `.mkv` and most other formats) onto the Dock icon or the app window. A settings window opens, you press Convert, and the result is written next to the source file with the same name and the extension of the chosen format.
 
