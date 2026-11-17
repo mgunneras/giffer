@@ -34,6 +34,7 @@ if [ ! -f build/AppIcon.icns ] || [ make-icon.swift -nt build/AppIcon.icns ]; th
   iconutil -c icns "$SET" -o build/AppIcon.icns
 fi
 cp build/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp assets/fonts/Jost.ttf "$APP/Contents/Resources/Jost.ttf"   # used by the drop zone
 cp build/icon.png "$APP/Contents/Resources/Artwork.png"      # square artwork, shown in the About window
 mkdir -p "$APP/Contents/Resources/licenses"
 cp assets/fonts/Jost-OFL.txt "$APP/Contents/Resources/licenses/Jost-OFL.txt"

@@ -100,7 +100,7 @@ final class AppModel: ObservableObject {
 
     func chooseFile() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.movie, .video]
+        panel.allowedContentTypes = SupportedInput.contentTypes
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url { open(url) }
     }

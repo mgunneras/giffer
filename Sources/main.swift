@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startSnapshots() {
         let env = ProcessInfo.processInfo.environment
         guard let dir = env["GIFFER_SNAPSHOT"] else { return }
+        if env["GIFFER_DARK"] != nil { NSApp.appearance = NSAppearance(named: .darkAqua) }
         var seen = Set<String>(), autoConverted = false, rendered = false
         if env["GIFFER_ABOUT"] != nil {
             showAbout(nil)

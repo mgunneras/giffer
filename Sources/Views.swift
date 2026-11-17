@@ -44,20 +44,21 @@ struct DropZone: View {
     let targeted: Bool
 
     var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "film")
-                .font(.system(size: 40, weight: .light))
-                .foregroundStyle(targeted ? Color.accentColor : .secondary)
-            Text("Drop a video here").font(.title3.weight(.medium))
-            Text("or drop it on the Dock icon. The result is saved next to the video.")
-                .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            Button("Choose File…") { model.chooseFile() }.padding(.top, 4)
+        VStack(alignment: .leading, spacing: 0) {
+            Poster().frame(height: PosterView.height)
+            Rectangle().fill(Color(nsColor: .separatorColor)).frame(height: 1).padding(.top, 30)
+            HStack(spacing: 12) {
+                Button("Choose File…") { model.chooseFile() }
+                Text("or drop it on the Dock icon.\nThe result is saved next to the video.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Circle().fill(Color(red: 0.90, green: 0.08, blue: 0.11)).frame(width: 12, height: 12)
+            }
+            .padding(.top, 16)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 44)
-        .padding(.horizontal, 20)
+        .padding(24)
         .background(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(targeted ? Color.accentColor : Color.secondary.opacity(0.4),
                               style: StrokeStyle(lineWidth: 2, dash: [7, 5]))
         )
