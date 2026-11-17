@@ -46,6 +46,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     web.evaluateJavaScript("var i=document.images[0]; i.naturalWidth+'x'+i.naturalHeight+' complete='+i.complete") { r, _ in
                         try? "\(r ?? "nil")".write(toFile: "\(dir)/render.txt", atomically: true, encoding: .utf8)
                     }
+                    if let view = self.window.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                        view.cacheDisplay(in: view.bounds, to: rep)
+                        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "\(dir)/done-later.png"))
+                    }
                     web.takeSnapshot(with: nil) { image, _ in
                         guard let tiff = image?.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return }
                         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "\(dir)/render.png"))

@@ -1,13 +1,20 @@
 # Giffer
 
-A small macOS app that converts a video file to an animated image: GIF, animated WebP, AVIF or APNG. It was built for making GIFs to drop into presentations such as Google Slides.
+**Drop a video on the Dock icon. Paste a GIF into your slides.**
+
+1. Drag a video onto the Giffer icon in the Dock.
+2. Press Convert. Adjust the size, frame rate or length first if you want.
+3. The GIF is saved next to the video and copied to your clipboard.
+4. Paste it into Google Slides, or anywhere else.
+
+Giffer is a small macOS app, built for making GIFs for presentations. Everything runs on your Mac: nothing is uploaded, and nothing else needs to be installed. It also writes animated WebP, AVIF and APNG.
 
 <p>
   <img src="assets/screenshots/drop-window.jpg" width="400" alt="The Giffer window: a drop zone reading Drop video here, with the supported input and output formats listed">
   <img src="assets/screenshots/options-window.jpg" width="400" alt="The Giffer options window showing format, frame rate, width, colours, dithering, speed and trim settings">
 </p>
 
-Drag a video onto the Dock icon or the app window. Tested input formats: MP4, MOV, M4V, WEBM, MKV, AVI, MPG, WMV, FLV, TS, 3GP and GIF. A settings window opens, you press Convert, and the result is written next to the source file with the same name and the extension of the chosen format.
+You can also drag the video onto the app window, or pick it with Choose File. Tested input formats: MP4, MOV, M4V, WEBM, MKV, AVI, MPG, WMV, FLV, TS, 3GP and GIF. The result is written next to the source file with the same name and the extension of the chosen format.
 
 ## Download
 
@@ -38,7 +45,7 @@ This is needed once. The icon artwork is a plain square: macOS 26 rounds its cor
 
 The window shows the output dimensions, frame count and an approximate file size before converting. The estimate adjusts itself, per format, from the sizes of earlier conversions. All settings except trim, including the format, are remembered and used as the defaults next time.
 
-During conversion the window shows a progress bar and a live preview. Afterwards it shows the finished animation, its size, and buttons to copy it or reveal it in Finder. If a file with the same name already exists, the app asks before replacing it.
+During conversion the window shows a progress bar and a live preview. When it finishes, the result is copied to the clipboard as a file, ready to paste, and a short notice says so. The window then shows the finished animation, its size, and buttons to copy it again or reveal it in Finder. If a file with the same name already exists, the app asks before replacing it.
 
 ### Formats
 

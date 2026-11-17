@@ -152,6 +152,7 @@ final class AppModel: ObservableObject {
                         let ratio = min(8, max(0.125, Double(size) / plan.rawEstimate))
                         self.calibration = self.calibration * 0.5 + ratio * 0.5
                     }
+                    self.copyResult()
                     self.phase = .done
                     NSApp.requestUserAttention(.informationalRequest)
                 case .failure(let error):
@@ -179,9 +180,13 @@ final class AppModel: ObservableObject {
         if let resultURL { NSWorkspace.shared.activateFileViewerSelecting([resultURL]) }
     }
 
+    /// Puts the result on the clipboard as a file, the way Finder's Copy does,
+    /// so that pasting it elsewhere keeps the animation.
     func copyResult() {
         guard let resultURL else { return }
-        let pb = NSPasteboard.general
+        // Debug aid: GIFFER_PASTEBOARD=<name> uses a private pasteboard instead of the real clipboard.
+        let pb = ProcessInfo.processInfo.environment["GIFFER_PASTEBOARD"]
+            .map { NSPasteboard(name: NSPasteboard.Name($0)) } ?? .general
         pb.clearContents()
         pb.writeObjects([resultURL as NSURL])
     }

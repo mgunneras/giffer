@@ -225,6 +225,8 @@ struct ConvertingView: View {
 
 struct DoneView: View {
     @ObservedObject var model: AppModel
+    @State private var toast = false
+    @State private var toastToken = 0
 
     var body: some View {
         let px = model.resultPixels
@@ -233,8 +235,10 @@ struct DoneView: View {
             if let data = model.resultData {
                 AnimatedImage(data: data, mimeType: model.resultFormat.mimeType)
                     .frame(width: px.width * k, height: px.height * k)
-                    .allowsHitTesting(false)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .allowsHitTesting(false)
+                    .frame(maxWidth: .infinity, minHeight: 64)
+                    .overlay { if toast { ClipboardToast().transition(.scale(scale: 0.9).combined(with: .opacity)) } }
             }
             VStack(spacing: 2) {
                 Text(model.resultURL?.lastPathComponent ?? "").font(.headline).lineLimit(1).truncationMode(.middle)
@@ -244,11 +248,41 @@ struct DoneView: View {
             HStack {
                 Button("Change Settings…") { model.backToOptions() }
                 Spacer()
-                Button("Copy") { model.copyResult() }
+                Button("Copy") { model.copyResult(); showToast() }
                 Button("Reveal in Finder") { model.reveal() }.keyboardShortcut(.defaultAction)
             }
             Text("Drop another video to convert it.").font(.caption).foregroundStyle(.secondary)
         }
+        // The result is copied automatically when the conversion finishes.
+        .onAppear { showToast() }
+    }
+
+    /// Pops the card in, holds it, then lets it fade.
+    private func showToast() {
+        toastToken += 1
+        let token = toastToken
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) { toast = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
+            guard token == toastToken else { return }
+            withAnimation(.easeOut(duration: 0.7)) { toast = false }
+        }
+    }
+}
+
+/// A dark, high-contrast card, like the system's volume and brightness overlays.
+struct ClipboardToast: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "doc.on.clipboard.fill").font(.title2).foregroundStyle(.white)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Copied to your clipboard").font(.body.weight(.semibold)).foregroundStyle(.white)
+                Text("Paste it into your slides with ⌘V").font(.callout).foregroundStyle(.white.opacity(0.82))
+            }
+        }
+        .padding(.horizontal, 20).padding(.vertical, 14)
+        .background(Color.black.opacity(0.86), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.18)))
+        .shadow(color: .black.opacity(0.35), radius: 18, y: 6)
     }
 }
 
